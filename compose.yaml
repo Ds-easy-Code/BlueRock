@@ -1,0 +1,7 @@
+services:
+  app:
+    build: .
+    container_name: bluerock
+    working_dir: /app
+    ports:
+      - "8501:8501"
