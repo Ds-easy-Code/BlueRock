@@ -3,3 +3,5 @@ toolbarMode = "minimal"
 
 [server]
 headless = true
+maxMessageSize = 2000
+maxUploadSize = 2000
