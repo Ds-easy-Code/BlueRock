@@ -1,3 +1,7 @@
+import json
+import os
+from pathlib import Path
+
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -10,10 +14,42 @@ st.set_page_config(layout="wide", page_title="Media Viewer", page_icon="\U0001F6
 IMAGE_EXTS = ('png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tiff')
 UPLOAD_TYPES = ['zip'] + list(IMAGE_EXTS) + [e.lstrip('.') for e in VIDEO_EXTS]
 
+# Folder the host launcher (host_gui.py) bind-mounts files into.
+# See compose.yaml -> volumes: ./inbox:/app/inbox
+INBOX_DIR = os.environ.get("BLUEROCK_INPUT_DIR")
+QUEUE_DIR = Path(INBOX_DIR) / "queue" if INBOX_DIR else None
+STATE_FILE = Path(INBOX_DIR) / "state.json" if INBOX_DIR else None
 
-@st.cache_data(show_spinner="Reading files in memory...")
+
+@st.cache_data(show_spinner="Reading file...")
 def _process_uploads_cached(file_tuples: tuple):
     return process_uploads(list(file_tuples))
+
+
+def _queue_files():
+    """Sorted list of files currently queued by the host launcher. Names only
+    are read here; bytes are read lazily, one file at a time, below."""
+    if not QUEUE_DIR or not QUEUE_DIR.is_dir():
+        return []
+    return sorted(
+        (f for f in QUEUE_DIR.iterdir() if f.is_file() and not f.name.startswith(".")),
+        key=lambda p: p.name,
+    )
+
+
+def _read_index(n: int) -> int:
+    if not STATE_FILE or not STATE_FILE.exists():
+        return 0
+    try:
+        idx = json.loads(STATE_FILE.read_text()).get("index", 0)
+    except Exception:
+        idx = 0
+    return max(0, min(idx, max(n - 1, 0)))
+
+
+def _write_index(idx: int):
+    if STATE_FILE:
+        STATE_FILE.write_text(json.dumps({"index": idx}))
 
 
 st.markdown(
@@ -33,6 +69,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+queue_file_tuple = ()
+
 with st.sidebar:
     st.markdown(
         "<h3 style='margin:0 0 2px 0;font-size:1.1rem'>\U0001F6E1 Media viewer</h3>"
@@ -47,13 +85,33 @@ with st.sidebar:
         accept_multiple_files=True,
     )
 
-if uploaded_files:
-    file_tuples = tuple((f.name, f.getvalue()) for f in uploaded_files)
-    items, errors = _process_uploads_cached(file_tuples)
+    queue = _queue_files()
+    if queue:
+        idx = _read_index(len(queue))
+        st.markdown("---")
+        st.markdown(f"**Queue: file {idx + 1} of {len(queue)}**")
+        st.caption(queue[idx].name)
 
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("\u2b05 Prev", disabled=idx <= 0, use_container_width=True):
+                _write_index(idx - 1)
+                st.rerun()
+        with c2:
+            if st.button("Next \u27a1", disabled=idx >= len(queue) - 1, use_container_width=True):
+                _write_index(idx + 1)
+                st.rerun()
+
+        # Only this ONE file's bytes are read into memory, never the whole queue.
+        queue_file_tuple = ((queue[idx].name, queue[idx].read_bytes()),)
+
+uploaded_tuples = tuple((f.name, f.getvalue()) for f in uploaded_files) if uploaded_files else tuple()
+file_tuples = queue_file_tuple + uploaded_tuples
+
+if file_tuples:
+    items, errors = _process_uploads_cached(file_tuples)
     for err in errors:
         st.error(err)
-
     if items:
         final_html = build_gallery_html(items)
         components.html(final_html, height=900, scrolling=False)

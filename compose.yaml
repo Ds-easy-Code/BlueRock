@@ -5,3 +5,12 @@ services:
     working_dir: /app
     ports:
       - "8501:8501"
+    volumes:
+      # Host ./inbox <-> container /app/inbox
+      # host_gui.py copies the picked file in here before starting the container;
+      # app.py watches this folder and auto-loads whatever it finds.
+      # ":Z" relabels the volume for SELinux (Fedora/RHEL podman hosts); drop it
+      # on Debian/Ubuntu/macOS if podman complains about the flag.
+      - ./inbox:/app/inbox:Z
+    environment:
+      - BLUEROCK_INPUT_DIR=/app/inbox
