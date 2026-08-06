@@ -9,6 +9,9 @@ env/
 # Streamlit
 .streamlit/secrets.toml
 
+# Local config (your machine's paths -- see .env.example)
+.env
+
 # OS/editor cruft
 .DS_Store
 .vscode/
